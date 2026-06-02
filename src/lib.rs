@@ -31,6 +31,13 @@ pub use vdom::VDom;
 #[cfg(feature = "std")]
 pub use vdom::VDomGuard;
 
+#[cfg(feature = "std")]
+const STD_INLINE_CLASS_HANDLES: usize = 32;
+#[cfg(feature = "std")]
+const STD_INLINE_IDS: usize = 16;
+#[cfg(feature = "std")]
+const STD_INLINE_CLASSES: usize = 16;
+
 /// Parses the given input string
 ///
 /// This is the "entry point" and function that is called to parse HTML.
@@ -50,8 +57,17 @@ pub use vdom::VDomGuard;
 /// assert_eq!(dom.query_selector("div").unwrap().count(), 1);
 /// ```
 #[cfg(feature = "std")]
-pub fn parse(input: &str, options: ParserOptions) -> Result<VDom<'_>, ParseError> {
-    let mut parser = Parser::new(input, options);
+pub fn parse(
+    input: &str,
+    options: ParserOptions,
+) -> Result<
+    VDom<'_, STD_INLINE_CLASS_HANDLES, 0, 0, STD_INLINE_IDS, STD_INLINE_CLASSES, 0>,
+    ParseError,
+> {
+    let mut parser =
+        Parser::<STD_INLINE_CLASS_HANDLES, 0, 0, STD_INLINE_IDS, STD_INLINE_CLASSES, 0>::new(
+            input, options,
+        );
     parser.parse()?;
     Ok(VDom::from(parser))
 }

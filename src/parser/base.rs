@@ -4,7 +4,6 @@ use super::{
     tag::{Attributes, HTMLTag, Node},
 };
 use crate::InnerNodeHandle;
-#[cfg(not(feature = "std"))]
 use crate::inline::hashmap::InlineHashMap;
 use crate::{ParseError, bytes::Bytes, inline::vec::InlineVec, simd};
 use crate::{ParserOptions, stream::Stream};
@@ -15,7 +14,7 @@ type StorageVec<T, const N: usize> = std::vec::Vec<T>;
 type StorageVec<T, const N: usize> = InlineVec<T, N>;
 
 #[cfg(feature = "std")]
-type StorageMap<K, V, const N: usize> = std::collections::HashMap<K, V>;
+type StorageMap<K, V, const N: usize> = InlineHashMap<K, V, N>;
 #[cfg(not(feature = "std"))]
 type StorageMap<K, V, const N: usize> = InlineHashMap<K, V, N>;
 
@@ -30,8 +29,11 @@ fn new_vec<T, const N: usize>() -> StorageVec<T, N> {
 }
 
 #[cfg(feature = "std")]
-fn new_map<K, V, const N: usize>() -> StorageMap<K, V, N> {
-    std::collections::HashMap::new()
+fn new_map<K, V, const N: usize>() -> StorageMap<K, V, N>
+where
+    K: core::hash::Hash + Eq,
+{
+    InlineHashMap::new()
 }
 
 #[cfg(not(feature = "std"))]
@@ -66,12 +68,18 @@ fn insert_map<K, V, const N: usize>(
     map: &mut StorageMap<K, V, N>,
     key: K,
     value: V,
-    _err: ParseError,
+    err: ParseError,
 ) -> Result<Option<V>, ParseError>
 where
     K: core::hash::Hash + Eq,
 {
-    Ok(map.insert(key, value))
+    if let Some(slot) = map.get_mut(&key) {
+        let old = core::mem::replace(slot, value);
+        Ok(Some(old))
+    } else {
+        map.insert(key, value).map_err(|_| err)?;
+        Ok(None)
+    }
 }
 
 #[cfg(not(feature = "std"))]

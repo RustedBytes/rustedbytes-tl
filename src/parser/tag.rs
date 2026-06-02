@@ -398,47 +398,28 @@ impl<'a> HTMLTag<'a> {
     ///
     /// Equivalent to [Element#outerHTML](https://developer.mozilla.org/en-US/docs/Web/API/Element/outerHTML) in browsers.
     #[cfg(feature = "std")]
-    pub fn outer_html<'p>(&'p self, parser: &'p Parser<'a>) -> String {
-        let tag_name = self._name.as_utf8_str();
-        let is_void_element = HTML_VOID_ELEMENTS.contains(&tag_name.as_ref());
-        let mut outer_html = format!("<{}", &tag_name);
-
-        #[inline]
-        fn write_attribute(dest: &mut String, k: Cow<str>, v: Option<Cow<str>>) {
-            dest.push(' ');
-
-            dest.push_str(&k);
-
-            if let Some(value) = v {
-                dest.push_str("=\"");
-                dest.push_str(&value);
-                dest.push('"');
-            }
-        }
-
-        let attr = self.attributes();
-
-        for (k, v) in attr.iter() {
-            write_attribute(&mut outer_html, k, v);
-        }
-
-        outer_html.push('>');
-
-        // void elements have neither content nor a closing tag.
-        if is_void_element {
-            return outer_html;
-        }
-
-        // TODO(y21): More of an idea than a TODO, but a potential perf improvement
-        // could be having some kind of internal inner_html function that takes a &mut String
-        // and simply writes to it instead of returning a newly allocated string for every element
-        // and appending it
-        outer_html.push_str(&self.inner_html(parser));
-
-        outer_html.push_str("</");
-        outer_html.push_str(&self._name.as_utf8_str());
-        outer_html.push('>');
-
+    pub fn outer_html<
+        'p,
+        const MAX_NODES: usize,
+        const MAX_STACK: usize,
+        const MAX_ROOTS: usize,
+        const MAX_IDS: usize,
+        const MAX_CLASSES: usize,
+        const MAX_SELECTOR_NODES: usize,
+    >(
+        &'p self,
+        parser: &'p Parser<
+            'a,
+            MAX_NODES,
+            MAX_STACK,
+            MAX_ROOTS,
+            MAX_IDS,
+            MAX_CLASSES,
+            MAX_SELECTOR_NODES,
+        >,
+    ) -> String {
+        let mut outer_html = String::with_capacity(self._raw.as_bytes().len());
+        let _ = self.write_outer_html(parser, &mut outer_html);
         outer_html
     }
 
@@ -450,13 +431,29 @@ impl<'a> HTMLTag<'a> {
     ///
     /// Equivalent to [Element#innerHTML](https://developer.mozilla.org/en-US/docs/Web/API/Element/innerHTML) in browsers.
     #[cfg(feature = "std")]
-    pub fn inner_html<'p>(&'p self, parser: &'p Parser<'a>) -> String {
-        self.children()
-            .top()
-            .iter()
-            .map(|handle| handle.get(parser).unwrap())
-            .map(|node| node.outer_html(parser))
-            .collect::<String>()
+    pub fn inner_html<
+        'p,
+        const MAX_NODES: usize,
+        const MAX_STACK: usize,
+        const MAX_ROOTS: usize,
+        const MAX_IDS: usize,
+        const MAX_CLASSES: usize,
+        const MAX_SELECTOR_NODES: usize,
+    >(
+        &'p self,
+        parser: &'p Parser<
+            'a,
+            MAX_NODES,
+            MAX_STACK,
+            MAX_ROOTS,
+            MAX_IDS,
+            MAX_CLASSES,
+            MAX_SELECTOR_NODES,
+        >,
+    ) -> String {
+        let mut inner_html = String::with_capacity(self._raw.as_bytes().len());
+        let _ = self.write_inner_html(parser, &mut inner_html);
+        inner_html
     }
 
     /// Returns the raw HTML of this tag.
@@ -480,7 +477,25 @@ impl<'a> HTMLTag<'a> {
     /// assert_eq!((start, end), (3, 20));
     /// assert_eq!(&source[start..=end], "<span>hello</span>");
     /// ```
-    pub fn boundaries(&self, parser: &Parser<'a>) -> (usize, usize) {
+    pub fn boundaries<
+        const MAX_NODES: usize,
+        const MAX_STACK: usize,
+        const MAX_ROOTS: usize,
+        const MAX_IDS: usize,
+        const MAX_CLASSES: usize,
+        const MAX_SELECTOR_NODES: usize,
+    >(
+        &self,
+        parser: &Parser<
+            'a,
+            MAX_NODES,
+            MAX_STACK,
+            MAX_ROOTS,
+            MAX_IDS,
+            MAX_CLASSES,
+            MAX_SELECTOR_NODES,
+        >,
+    ) -> (usize, usize) {
         let raw = self._raw.as_bytes();
         let input = parser.stream.data().as_ptr();
         let start = raw.as_ptr();
@@ -494,7 +509,26 @@ impl<'a> HTMLTag<'a> {
     /// This function may not allocate memory for a new string as it can just return the part of the tag that doesn't have markup.
     /// For tags that *do* have more than one subnode, this will allocate memory
     #[cfg(feature = "std")]
-    pub fn inner_text<'p>(&self, parser: &'p Parser<'a>) -> Cow<'p, str> {
+    pub fn inner_text<
+        'p,
+        const MAX_NODES: usize,
+        const MAX_STACK: usize,
+        const MAX_ROOTS: usize,
+        const MAX_IDS: usize,
+        const MAX_CLASSES: usize,
+        const MAX_SELECTOR_NODES: usize,
+    >(
+        &self,
+        parser: &'p Parser<
+            'a,
+            MAX_NODES,
+            MAX_STACK,
+            MAX_ROOTS,
+            MAX_IDS,
+            MAX_CLASSES,
+            MAX_SELECTOR_NODES,
+        >,
+    ) -> Cow<'p, str> {
         let len = self._children.len();
 
         if len == 0 {
@@ -567,11 +601,30 @@ impl<'a> HTMLTag<'a> {
     ///
     /// ```
     #[cfg(feature = "std")]
-    pub fn query_selector<'b>(
+    pub fn query_selector<
+        'b,
+        const MAX_NODES: usize,
+        const MAX_STACK: usize,
+        const MAX_ROOTS: usize,
+        const MAX_IDS: usize,
+        const MAX_CLASSES: usize,
+    >(
         &'b self,
-        parser: &'b Parser<'a>,
+        parser: &'b Parser<'a, MAX_NODES, MAX_STACK, MAX_ROOTS, MAX_IDS, MAX_CLASSES, 0>,
         selector: &'b str,
-    ) -> Option<QuerySelectorIterator<'a, 'b, Self>> {
+    ) -> Option<
+        QuerySelectorIterator<
+            'a,
+            'b,
+            Self,
+            MAX_NODES,
+            MAX_STACK,
+            MAX_ROOTS,
+            MAX_IDS,
+            MAX_CLASSES,
+            0,
+        >,
+    > {
         let selector = crate::parse_query_selector(selector)?;
         let iter = queryselector::QuerySelectorIterator::new(selector, parser, self);
         Some(iter)
@@ -824,7 +877,27 @@ impl<'a> Node<'a> {
 
     /// Returns the inner text of this node
     #[cfg(feature = "std")]
-    pub fn inner_text<'s, 'p: 's>(&'s self, parser: &'p Parser<'a>) -> Cow<'s, str> {
+    pub fn inner_text<
+        's,
+        'p: 's,
+        const MAX_NODES: usize,
+        const MAX_STACK: usize,
+        const MAX_ROOTS: usize,
+        const MAX_IDS: usize,
+        const MAX_CLASSES: usize,
+        const MAX_SELECTOR_NODES: usize,
+    >(
+        &'s self,
+        parser: &'p Parser<
+            'a,
+            MAX_NODES,
+            MAX_STACK,
+            MAX_ROOTS,
+            MAX_IDS,
+            MAX_CLASSES,
+            MAX_SELECTOR_NODES,
+        >,
+    ) -> Cow<'s, str> {
         match self {
             Node::Comment(_) => Cow::Borrowed(""),
             Node::Raw(r) => r.as_utf8_str(),
@@ -834,7 +907,26 @@ impl<'a> Node<'a> {
 
     /// Returns the outer HTML of this node
     #[cfg(feature = "std")]
-    pub fn outer_html<'s>(&'s self, parser: &Parser<'a>) -> Cow<'s, str> {
+    pub fn outer_html<
+        's,
+        const MAX_NODES: usize,
+        const MAX_STACK: usize,
+        const MAX_ROOTS: usize,
+        const MAX_IDS: usize,
+        const MAX_CLASSES: usize,
+        const MAX_SELECTOR_NODES: usize,
+    >(
+        &'s self,
+        parser: &Parser<
+            'a,
+            MAX_NODES,
+            MAX_STACK,
+            MAX_ROOTS,
+            MAX_IDS,
+            MAX_CLASSES,
+            MAX_SELECTOR_NODES,
+        >,
+    ) -> Cow<'s, str> {
         match self {
             Node::Comment(c) => c.as_utf8_str(),
             Node::Raw(r) => r.as_utf8_str(),
@@ -844,7 +936,26 @@ impl<'a> Node<'a> {
 
     /// Returns the inner HTML of this node
     #[cfg(feature = "std")]
-    pub fn inner_html<'s>(&'s self, parser: &Parser<'a>) -> Cow<'s, str> {
+    pub fn inner_html<
+        's,
+        const MAX_NODES: usize,
+        const MAX_STACK: usize,
+        const MAX_ROOTS: usize,
+        const MAX_IDS: usize,
+        const MAX_CLASSES: usize,
+        const MAX_SELECTOR_NODES: usize,
+    >(
+        &'s self,
+        parser: &Parser<
+            'a,
+            MAX_NODES,
+            MAX_STACK,
+            MAX_ROOTS,
+            MAX_IDS,
+            MAX_CLASSES,
+            MAX_SELECTOR_NODES,
+        >,
+    ) -> Cow<'s, str> {
         match self {
             Node::Comment(c) => c.as_utf8_str(),
             Node::Raw(r) => r.as_utf8_str(),

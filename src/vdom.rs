@@ -3,6 +3,8 @@ use crate::InnerNodeHandle;
 #[cfg(feature = "std")]
 use crate::ParserOptions;
 use crate::errors::ParseError;
+#[cfg(feature = "std")]
+use crate::inline::vec::InlineVecIter;
 use crate::parser::HTMLVersion;
 use crate::parser::NodeHandle;
 use crate::queryselector;
@@ -183,36 +185,33 @@ impl<
 }
 
 #[cfg(feature = "std")]
-impl<'a> VDom<'a> {
+impl<
+    'a,
+    const MAX_NODES: usize,
+    const MAX_STACK: usize,
+    const MAX_ROOTS: usize,
+    const MAX_IDS: usize,
+    const MAX_CLASSES: usize,
+> VDom<'a, MAX_NODES, MAX_STACK, MAX_ROOTS, MAX_IDS, MAX_CLASSES, 0>
+{
     /// Returns a list of elements that match a given class name.
     pub fn get_elements_by_class_name<'b>(
         &'b self,
         id: &'b str,
-    ) -> Box<dyn Iterator<Item = NodeHandle> + 'b> {
+    ) -> ClassNameIterator<'a, 'b, MAX_NODES> {
         let parser = self.parser();
 
         if parser.options.is_tracking_classes() {
             parser
                 .classes
                 .get(&Bytes::from(id.as_bytes()))
-                .map(|x| Box::new(x.iter().cloned()) as Box<dyn Iterator<Item = NodeHandle>>)
-                .unwrap_or_else(|| Box::new(std::iter::empty()))
+                .map(|handles| ClassNameIterator::Tracked(handles.iter()))
+                .unwrap_or_else(|| ClassNameIterator::Empty)
         } else {
-            let member = id;
-
-            let iter = self
-                .nodes()
-                .iter()
-                .enumerate()
-                .filter_map(move |(id, node)| {
-                    node.as_tag().and_then(|tag| {
-                        tag._attributes
-                            .is_class_member(member)
-                            .then(|| NodeHandle::new(id as InnerNodeHandle))
-                    })
-                });
-
-            Box::new(iter)
+            ClassNameIterator::Scan {
+                member: id,
+                iter: self.nodes().iter().enumerate(),
+            }
         }
     }
 
@@ -222,7 +221,7 @@ impl<'a> VDom<'a> {
 
         for node in self.children() {
             let node = node.get(&self.parser).unwrap();
-            inner_html.push_str(&node.outer_html(&self.parser));
+            let _ = node.write_outer_html(&self.parser, &mut inner_html);
         }
 
         inner_html
@@ -232,10 +231,55 @@ impl<'a> VDom<'a> {
     pub fn query_selector<'b>(
         &'b self,
         selector: &'b str,
-    ) -> Option<QuerySelectorIterator<'a, 'b, Self>> {
+    ) -> Option<
+        QuerySelectorIterator<
+            'a,
+            'b,
+            Self,
+            MAX_NODES,
+            MAX_STACK,
+            MAX_ROOTS,
+            MAX_IDS,
+            MAX_CLASSES,
+            0,
+        >,
+    > {
         let selector = crate::parse_query_selector(selector)?;
         let iter = queryselector::QuerySelectorIterator::new(selector, self.parser(), self);
         Some(iter)
+    }
+}
+
+/// Iterator returned by [`VDom::get_elements_by_class_name`].
+#[cfg(feature = "std")]
+pub enum ClassNameIterator<'a, 'b, const MAX_NODES: usize = 0> {
+    /// No matching tracked class exists.
+    Empty,
+    /// Iterates over a tracked class lookup table.
+    Tracked(InlineVecIter<'b, NodeHandle, MAX_NODES>),
+    /// Scans every node when class tracking was not enabled.
+    Scan {
+        member: &'b str,
+        iter: core::iter::Enumerate<core::slice::Iter<'b, Node<'a>>>,
+    },
+}
+
+#[cfg(feature = "std")]
+impl<'a, 'b, const MAX_NODES: usize> Iterator for ClassNameIterator<'a, 'b, MAX_NODES> {
+    type Item = NodeHandle;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Empty => None,
+            Self::Tracked(iter) => iter.next().copied(),
+            Self::Scan { member, iter } => iter.find_map(|(id, node)| {
+                node.as_tag().and_then(|tag| {
+                    tag._attributes
+                        .is_class_member(*member)
+                        .then(|| NodeHandle::new(id as InnerNodeHandle))
+                })
+            }),
+        }
     }
 }
 
@@ -247,7 +291,15 @@ impl<'a> VDom<'a> {
 #[cfg(feature = "std")]
 pub struct VDomGuard {
     /// Wrapped VDom instance
-    dom: VDom<'static>,
+    dom: VDom<
+        'static,
+        { crate::STD_INLINE_CLASS_HANDLES },
+        0,
+        0,
+        { crate::STD_INLINE_IDS },
+        { crate::STD_INLINE_CLASSES },
+        0,
+    >,
     /// The leaked input string that is referenced by self.dom
     _s: RawString,
     /// PhantomData for self.dom
@@ -274,7 +326,14 @@ impl VDomGuard {
         //    that, when dropped, will free the input string
         // b) fail, and we return a ParseError
         //    and `RawString`s destructor will run and deallocate the string properly
-        let mut parser = Parser::new(input_ref, options);
+        let mut parser = Parser::<
+            { crate::STD_INLINE_CLASS_HANDLES },
+            0,
+            0,
+            { crate::STD_INLINE_IDS },
+            { crate::STD_INLINE_CLASSES },
+            0,
+        >::new(input_ref, options);
         parser.parse()?;
 
         Ok(Self {
@@ -290,14 +349,34 @@ impl VDomGuard {
     /// Returns a reference to the inner DOM.
     ///
     /// The lifetime of the returned `VDom` is bound to self so that elements cannot outlive this `VDomGuard` struct.
-    pub fn get_ref<'a>(&'a self) -> &'a VDom<'a> {
+    pub fn get_ref<'a>(
+        &'a self,
+    ) -> &'a VDom<
+        'a,
+        { crate::STD_INLINE_CLASS_HANDLES },
+        0,
+        0,
+        { crate::STD_INLINE_IDS },
+        { crate::STD_INLINE_CLASSES },
+        0,
+    > {
         &self.dom
     }
 
     /// Returns a mutable reference to the inner DOM.
     ///
     /// The lifetime of the returned `VDom` is bound to self so that elements cannot outlive this `VDomGuard` struct.
-    pub fn get_mut_ref<'a, 'b: 'a>(&'b mut self) -> &'b VDom<'a> {
+    pub fn get_mut_ref<'a, 'b: 'a>(
+        &'b mut self,
+    ) -> &'b VDom<
+        'a,
+        { crate::STD_INLINE_CLASS_HANDLES },
+        0,
+        0,
+        { crate::STD_INLINE_IDS },
+        { crate::STD_INLINE_CLASSES },
+        0,
+    > {
         &mut self.dom
     }
 }
