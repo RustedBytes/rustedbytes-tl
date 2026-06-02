@@ -1,5 +1,7 @@
 # `rustedbytes-tl`
 
+[![Crates.io Version](https://img.shields.io/crates/v/rustedbytes-tl)](https://crates.io/crates/rustedbytes-tl)
+
 tl is a fast HTML parser written in pure Rust.
 
 By default this crate builds without `std` or `alloc`. Enable `std` for the
