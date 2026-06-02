@@ -33,3 +33,20 @@ harness = false
 
 [lib]
 name = "tl"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+incremental = false
+debug = false
+overflow-checks = false
+
+[profile.bench]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+incremental = false
+debug = false
+overflow-checks = false
