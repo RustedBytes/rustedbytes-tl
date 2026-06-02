@@ -6,7 +6,7 @@ By default this crate builds without `std` or `alloc`. Enable `std` for the
 allocating convenience API:
 
 ```toml
-astral-tl = { version = "0.1", features = ["std"] }
+rustedbytes-tl = { version = "0.1", features = ["std"] }
 ```
 
 For the nightly portable SIMD path, enable `portable-simd` and build with
@@ -19,7 +19,7 @@ cargo +nightly build --features portable-simd
 ## Provenance
 
 This crate is a fork of [`astral-tl`](https://github.com/astral-sh/astral-tl), modified to
-add no-std, zero-copy and other improvements.
+add no-std, zero-copy parsing and other improvements.
 
 ## License
 
