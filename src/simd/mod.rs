@@ -2,11 +2,8 @@ use crate::util;
 
 mod fallback;
 
-#[cfg(all(target_arch = "x86_64", target_feature = "sse2"))]
-mod x86_64;
-
-#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-mod aarch64;
+#[cfg(feature = "portable-simd")]
+mod portable;
 
 /// Checks if the given byte is a "closing" byte (/ or >)
 #[inline]
@@ -17,20 +14,12 @@ pub fn is_closing(needle: u8) -> bool {
 /// Searches for the first non-identifier in `haystack`
 #[inline]
 pub fn search_non_ident(haystack: &[u8]) -> Option<usize> {
-    #[cfg(all(target_arch = "x86_64", target_feature = "sse2"))]
+    #[cfg(feature = "portable-simd")]
     {
-        unsafe { x86_64::search_non_ident_sse2(haystack) }
+        portable::search_non_ident(haystack)
     }
 
-    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-    {
-        unsafe { aarch64::search_non_ident_neon(haystack) }
-    }
-
-    #[cfg(not(any(
-        all(target_arch = "x86_64", target_feature = "sse2"),
-        all(target_arch = "aarch64", target_feature = "neon")
-    )))]
+    #[cfg(not(feature = "portable-simd"))]
     {
         fallback::search_non_ident(haystack)
     }
@@ -39,13 +28,29 @@ pub fn search_non_ident(haystack: &[u8]) -> Option<usize> {
 /// Searches for the first occurrence of any of 3 bytes in `haystack`
 #[inline]
 pub fn find3(haystack: &[u8], needle: [u8; 3]) -> Option<usize> {
-    memchr::memchr3(needle[0], needle[1], needle[2], haystack)
+    #[cfg(feature = "portable-simd")]
+    {
+        portable::find3(haystack, needle)
+    }
+
+    #[cfg(not(feature = "portable-simd"))]
+    {
+        memchr::memchr3(needle[0], needle[1], needle[2], haystack)
+    }
 }
 
 /// Searches for the first occurence of `needle` in `haystack`
 #[inline]
 pub fn find(haystack: &[u8], needle: u8) -> Option<usize> {
-    memchr::memchr(needle, haystack)
+    #[cfg(feature = "portable-simd")]
+    {
+        portable::find(haystack, needle)
+    }
+
+    #[cfg(not(feature = "portable-simd"))]
+    {
+        memchr::memchr(needle, haystack)
+    }
 }
 
 /// Checks if the ASCII characters in `haystack` match `needle` (case insensitive)

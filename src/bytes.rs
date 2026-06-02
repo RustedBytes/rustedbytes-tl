@@ -125,7 +125,7 @@ impl TryFrom<String> for Bytes<'static> {
 /// Converts `Bytes` raw parts to a slice
 #[inline]
 unsafe fn compact_bytes_to_slice<'a>(ptr: *const u8, l: u32) -> &'a [u8] {
-    core::slice::from_raw_parts(ptr, l as usize)
+    unsafe { core::slice::from_raw_parts(ptr, l as usize) }
 }
 
 /// Converts a boxed byte slice to compact raw parts
@@ -145,8 +145,10 @@ unsafe fn boxed_slice_into_compact_parts(slice: Box<[u8]>) -> (*mut u8, u32) {
 #[inline]
 #[cfg(feature = "std")]
 unsafe fn clone_compact_bytes_parts(ptr: *mut u8, len: u32) -> (*mut u8, u32) {
-    let slice = compact_bytes_to_slice(ptr, len).to_vec().into_boxed_slice();
-    boxed_slice_into_compact_parts(slice)
+    let slice = unsafe { compact_bytes_to_slice(ptr, len) }
+        .to_vec()
+        .into_boxed_slice();
+    unsafe { boxed_slice_into_compact_parts(slice) }
 }
 
 // Custom `Debug` trait is implemented which displays the data as a UTF8 string,
@@ -246,7 +248,7 @@ impl<'a> Bytes<'a> {
     pub unsafe fn set_unchecked<B: IntoOwnedBytes>(&mut self, data: B) -> Option<Box<[u8]>> {
         let data = <B as IntoOwnedBytes>::into_bytes(data);
 
-        let (ptr, len) = boxed_slice_into_compact_parts(data);
+        let (ptr, len) = unsafe { boxed_slice_into_compact_parts(data) };
 
         let bytes = BytesInner::Owned(ptr, len);
         let old = core::mem::replace(&mut self.data, bytes);
@@ -258,7 +260,7 @@ impl<'a> Bytes<'a> {
             BytesInner::Borrowed(_, _) => None,
             BytesInner::Owned(ptr, len) => {
                 let len = *len as usize;
-                Some(Vec::from_raw_parts(*ptr, len, len).into_boxed_slice())
+                Some(unsafe { Vec::from_raw_parts(*ptr, len, len) }.into_boxed_slice())
             }
         }
     }

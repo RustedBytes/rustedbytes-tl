@@ -1,6 +1,7 @@
 #![doc = include_str!("../README.md")]
 #![deny(missing_docs)]
 #![cfg_attr(not(feature = "std"), no_std)]
+#![cfg_attr(feature = "portable-simd", feature(portable_simd))]
 
 mod bytes;
 /// Errors that occur throughout the crate
