@@ -19,7 +19,7 @@ cargo +nightly build --features portable-simd
 ## Provenance
 
 This crate is a fork of [`astral-tl`](https://github.com/astral-sh/astral-tl), modified to
-include bug fixes and other improvements.
+add no-std, zero-copy and other improvements.
 
 ## License
 
