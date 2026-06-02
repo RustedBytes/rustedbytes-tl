@@ -1,4 +1,4 @@
-# `astral-tl`
+# `rustedbytes-tl`
 
 tl is a fast HTML parser written in pure Rust.
 
