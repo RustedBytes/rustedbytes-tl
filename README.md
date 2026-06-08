@@ -25,4 +25,4 @@ add no-std, zero-copy parsing and other improvements.
 
 ## License
 
-This project is licensed under the MIT license.
+MIT.
