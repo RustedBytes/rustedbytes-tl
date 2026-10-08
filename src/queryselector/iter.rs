@@ -20,6 +20,8 @@ pub struct QuerySelectorIterator<
     collection: &'b Q,
     parser:
         &'b Parser<'a, MAX_NODES, MAX_STACK, MAX_ROOTS, MAX_IDS, MAX_CLASSES, MAX_SELECTOR_NODES>,
+    #[cfg(feature = "std")]
+    context: Option<super::selector::Context>,
     index: usize,
     len: usize,
     _a: PhantomData<&'a ()>,
@@ -51,6 +53,8 @@ impl<
     fn clone(&self) -> Self {
         Self {
             selector: self.selector.clone(),
+            #[cfg(feature = "std")]
+            context: self.context.clone(),
             collection: self.collection,
             parser: self.parser,
             index: self.index,
@@ -98,6 +102,10 @@ impl<
         collection: &'b Q,
     ) -> Self {
         Self {
+            #[cfg(feature = "std")]
+            context: selector
+                .needs_context()
+                .then(|| super::selector::Context::new(parser.tags.as_slice())),
             selector,
             collection,
             index: 0,
@@ -138,6 +146,18 @@ impl<
             let node = self.collection.get(self.parser, self.index);
             self.index += 1;
             if let Some((node, id)) = node {
+                #[cfg(feature = "std")]
+                let matches = self.context.as_ref().map_or_else(
+                    || self.selector.matches(node),
+                    |context| {
+                        self.selector.matches_in(
+                            id.get_inner() as usize,
+                            self.parser.tags.as_slice(),
+                            context,
+                        )
+                    },
+                );
+                #[cfg(not(feature = "std"))]
                 let matches = self.selector.matches(node);
 
                 if matches {
