@@ -82,5 +82,47 @@ resolution, features and flags; avoid concurrent builds during timing runs.
 | Tree differs from a browser | Review HTML5 recovery limits in the compatibility notes |
 | Capacity error | Increase the relevant bounded budget or use heap-backed `std` parsing |
 
-Docs-only paths trigger CI too. This workflow checks code and docs; it does not
-publish a crate, bump the version or create a release.
+Docs-only paths trigger CI too. `ci.yml` checks code and docs. Version changes and publishing use the separate
+workflows described below.
+
+
+## Version changes and crates.io publishing
+
+1. Run **Update version** (`update-version.yml`) from `master`. Choose `patch`,
+   `minor` or `major`, or enter an explicit `MAJOR.MINOR.PATCH`. The workflow
+   rejects malformed, unchanged or decreased versions and existing version
+   branches/tags. For the breaking changes since 0.2.0, choose `minor` (0.3.0)
+   or a later compatible release version, rather than a 0.2.x patch.
+2. Review the generated `chore/version-*` PR and its explicitly dispatched
+   `ci.yml` run, then merge it. Only `Cargo.toml` is committed: this library
+   does not track `Cargo.lock`. Enable **Allow GitHub Actions to create and
+   approve pull requests** in repository Actions settings. Branch protection
+   may require additional checks on the PR itself; a manually dispatched run
+   does not necessarily satisfy every required-check policy.
+3. Create a tag named exactly `v<package version>` on the merged commit and
+   publish a GitHub Release for it. Tag creation alone does not publish the
+   crate. Publish the Release manually or with credentials that trigger
+   Actions; Release events generated with `GITHUB_TOKEN` do not trigger this
+   workflow.
+4. **Publish crates.io** (`publish-crates.yml`) runs for a published stable
+   Release. It checks the tag against `Cargo.toml`, requires its commit to be
+   reachable from `master`, runs default/std/entities tests and verifies the
+   packaged crate with default and entities features before uploading.
+   Prereleases are skipped. Retrying cannot overwrite an existing crates.io
+   version; Cargo reports an error if that version is already published.
+
+Configure [crates.io Trusted Publishing](https://crates.io/docs/trusted-publishing)
+for the existing `rustedbytes-tl` crate before the first automated publish:
+
+| Setting | Value |
+| --- | --- |
+| GitHub owner | `RustedBytes` |
+| Repository | `rustedbytes-tl` |
+| Workflow filename | `publish-crates.yml` |
+| GitHub environment | `crates-io` |
+
+Create the matching `crates-io` environment in repository settings. The publish
+job requests a short-lived token through `rust-lang/crates-io-auth-action`;
+no long-lived `CARGO_REGISTRY_TOKEN` secret is required. The action revokes the
+token when the job finishes. Restrict the environment to release tags if desired.
+These workflows prepare future releases; adding them does not publish a version.
