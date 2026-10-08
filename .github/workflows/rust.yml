@@ -1,0 +1,119 @@
+name: Rust checks
+
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'benches/**'
+      - 'examples/**'
+      - 'build.rs'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'README.md'
+      - '.cargo/**'
+      - 'rust-toolchain*'
+      - '.github/workflows/rust.yml'
+  push:
+    branches: [master]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'benches/**'
+      - 'examples/**'
+      - 'build.rs'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'README.md'
+      - '.cargo/**'
+      - 'rust-toolchain*'
+      - '.github/workflows/rust.yml'
+  workflow_dispatch:
+    inputs:
+      miri:
+        description: Run the focused Miri safety tests
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: '0'
+
+jobs:
+  stable:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.0'
+          components: rustfmt, clippy
+      - run: cargo fmt --check
+      - name: Tests and strict Clippy for each stable feature configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --no-default-features
+          cargo test --features std
+          cargo test --features entities
+          cargo clippy --all-targets --no-default-features -- -D warnings
+          cargo clippy --all-targets --features entities -- -D warnings
+      - name: Benchmark smoke checks (no performance claims)
+        run: |
+          cargo bench --bench tl -- --test
+          cargo bench --features std --bench tl -- --test
+          cargo bench --features entities --bench audit -- --test
+
+  compatibility:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.92.0'
+      - run: cargo check --all-targets --no-default-features
+      - run: cargo check --all-targets --features entities
+
+  portable-simd:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          toolchain: nightly-2026-09-25
+      - run: cargo test --no-default-features --features portable-simd
+      - run: cargo test --features entities,portable-simd
+
+  miri:
+    if: github.event_name == 'workflow_dispatch' && inputs.miri
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      MIRI_AUTOSETUP: '1'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          toolchain: nightly-2026-09-25
+          components: miri
+      - run: cargo miri test --lib --features std tests::audit
+      - run: cargo miri test --lib --features std owned
+      - run: cargo miri test --lib --features std inline

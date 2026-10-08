@@ -198,6 +198,16 @@ impl<const N: usize> Selector<'_, N> {
     }
 
     pub(crate) fn matches_in(&self, id: usize, nodes: &[Node<'_>], ctx: &Context) -> bool {
+        self.matches_scoped(id, nodes, ctx, None)
+    }
+
+    fn matches_scoped(
+        &self,
+        id: usize,
+        nodes: &[Node<'_>],
+        ctx: &Context,
+        scope: Option<usize>,
+    ) -> bool {
         let Some(node) = nodes.get(id) else {
             return false;
         };
@@ -205,19 +215,25 @@ impl<const N: usize> Selector<'_, N> {
             return false;
         }
         match self {
-            Self::And(a, b) => a.matches_in(id, nodes, ctx) && b.matches_in(id, nodes, ctx),
-            Self::Or(a, b) => a.matches_in(id, nodes, ctx) || b.matches_in(id, nodes, ctx),
-            Self::Not(a) => !a.matches_in(id, nodes, ctx),
+            Self::And(a, b) => {
+                a.matches_scoped(id, nodes, ctx, scope) && b.matches_scoped(id, nodes, ctx, scope)
+            }
+            Self::Or(a, b) => {
+                a.matches_scoped(id, nodes, ctx, scope) || b.matches_scoped(id, nodes, ctx, scope)
+            }
+            Self::Not(a) => !a.matches_scoped(id, nodes, ctx, scope),
             Self::Parent(a, b) => {
-                b.matches_in(id, nodes, ctx)
-                    && ctx.parent[id].is_some_and(|p| a.matches_in(p, nodes, ctx))
+                b.matches_scoped(id, nodes, ctx, scope)
+                    && ctx.parent[id]
+                        .filter(|p| Some(*p) != scope)
+                        .is_some_and(|p| a.matches_scoped(p, nodes, ctx, scope))
             }
             Self::Adjacent(a, b) => {
-                b.matches_in(id, nodes, ctx)
-                    && ctx.previous[id].is_some_and(|p| a.matches_in(p, nodes, ctx))
+                b.matches_scoped(id, nodes, ctx, scope)
+                    && ctx.previous[id].is_some_and(|p| a.matches_scoped(p, nodes, ctx, scope))
             }
             Self::Descendant(a, b) | Self::Sibling(a, b) => {
-                if !b.matches_in(id, nodes, ctx) {
+                if !b.matches_scoped(id, nodes, ctx, scope) {
                     return false;
                 }
                 let links = if matches!(self, Self::Descendant(..)) {
@@ -225,16 +241,19 @@ impl<const N: usize> Selector<'_, N> {
                 } else {
                     &ctx.previous
                 };
-                let mut cursor = links[id];
+                let mut cursor = links[id]
+                    .filter(|next| !matches!(self, Self::Descendant(..)) || Some(*next) != scope);
                 // Bounded traversal also tolerates a cyclic graph introduced by mutation.
                 for _ in 0..nodes.len() {
                     let Some(p) = cursor else {
                         break;
                     };
-                    if a.matches_in(p, nodes, ctx) {
+                    if a.matches_scoped(p, nodes, ctx, scope) {
                         return true;
                     }
-                    cursor = links[p];
+                    cursor = links[p].filter(|next| {
+                        !matches!(self, Self::Descendant(..)) || Some(*next) != scope
+                    });
                 }
                 false
             }
@@ -248,14 +267,8 @@ impl<const N: usize> Selector<'_, N> {
                 }
             }
             Self::Has(a) => {
-                // Implicit descendant-relative arguments must not use the anchor
-                // itself or its ancestors to satisfy their left-hand selector.
-                let mut scoped = ctx.clone();
-                for parent in &mut scoped.parent {
-                    if *parent == Some(id) {
-                        *parent = None;
-                    }
-                }
+                // A borrowed boundary replaces the per-anchor cloned index.
+                // Descendant arguments cannot use the anchor or its ancestors.
                 nodes.iter().enumerate().any(|(candidate, _)| {
                     let mut cursor = ctx.parent[candidate];
                     for _ in 0..nodes.len() {
@@ -263,7 +276,7 @@ impl<const N: usize> Selector<'_, N> {
                             break;
                         };
                         if p == id {
-                            return a.matches_in(candidate, nodes, &scoped);
+                            return a.matches_scoped(candidate, nodes, ctx, Some(id));
                         }
                         cursor = ctx.parent[p];
                     }

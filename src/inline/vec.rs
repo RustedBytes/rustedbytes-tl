@@ -37,8 +37,20 @@ impl<T, const N: usize> InlineVec<T, N> {
     /// If `self` is inlined, this returns the underlying raw parts that make up this `InlineVec`.
     ///
     /// Only the first `.1` elements are initialized.
+    ///
+    /// ```compile_fail
+    /// fn mutate<T, const N: usize>(values: &mut tl::inline::vec::InlineVec<T, N>) {
+    ///     let _ = values.inline_parts_mut(); // an unsafe call is required
+    /// }
+    /// ```
+    ///
+    /// # Safety
+    /// Before the borrow ends, the initialized prefix must contain valid, uniquely
+    /// owned values of the element type. Replacing a slot with uninitialized data,
+    /// duplicating an owner or dropping it without replacing it violates this contract.
+    /// Prefer `get_mut` or typed mutable access instead.
     #[inline]
-    pub fn inline_parts_mut(&mut self) -> Option<(&mut [MaybeUninit<T>; N], usize)> {
+    pub unsafe fn inline_parts_mut(&mut self) -> Option<(&mut [MaybeUninit<T>; N], usize)> {
         self.0.inline_parts_mut()
     }
 
@@ -141,19 +153,21 @@ where
             #[cfg(feature = "std")]
             Self::Heap(m) => Self::Heap(m.clone()),
             Self::Inline { len, data } => {
-                let mut new_data = super::uninit_array();
-
-                let iter = data.iter().take(*len).enumerate();
-
-                for (idx, element) in iter {
-                    let element = unsafe { &*element.as_ptr() };
-                    new_data[idx] = MaybeUninit::new(T::clone(element));
+                let mut cloned = Self::new();
+                let (initialized, target) = match &mut cloned {
+                    Self::Inline { len, data } => (len, data),
+                    #[cfg(feature = "std")]
+                    Self::Heap(_) => unreachable!("new storage is inline"),
+                };
+                for element in data.iter().take(*len) {
+                    // SAFETY: only the initialized prefix is read. The new owner
+                    // updates its prefix after each successful clone, so a panic
+                    // drops all previously cloned elements exactly once.
+                    let value = unsafe { element.assume_init_ref() }.clone();
+                    target[*initialized].write(value);
+                    *initialized += 1;
                 }
-
-                Self::Inline {
-                    len: *len,
-                    data: new_data,
-                }
+                cloned
             }
         }
     }

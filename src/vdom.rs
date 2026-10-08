@@ -377,7 +377,8 @@ impl VDomGuard {
         &self.dom
     }
 
-    /// Returns a mutable reference to the inner DOM.
+    /// Mutably borrows the guard and returns a shared reference to its inner DOM.
+    /// The returned DOM cannot be mutated through this accessor.
     ///
     /// The lifetime of the returned `VDom` is bound to self so that elements cannot outlive this `VDomGuard` struct.
     pub fn get_mut_ref<'a, 'b: 'a>(

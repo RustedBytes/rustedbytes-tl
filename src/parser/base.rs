@@ -277,7 +277,7 @@ impl<
         let value = if let Some(quote) = self.stream.expect_oneof_and_skip(b"\"'") {
             self.read_to(quote)
         } else {
-            self.read_to3([b' ', b'\n', b'>'])
+            self.read_to3(*b" \n>")
         };
 
         Some((name, Some(value)))
@@ -307,7 +307,7 @@ impl<
                     b"class" => attributes.class = value,
                     _ => attributes
                         .raw
-                        .insert(key.into(), value)
+                        .insert_first(key.into(), value)
                         .map_err(|_| ParseError::AttributeCapacityExceeded)?,
                 };
 

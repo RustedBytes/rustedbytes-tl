@@ -513,8 +513,10 @@ impl<'a> HTMLTag<'a> {
         (offset, end)
     }
 
-    /// Returns the contained text of this element, excluding any markup.
-    /// Equivalent to [Element#innerText](https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/innerText) in browsers.
+    /// Concatenates descendant text, excluding markup and comments.
+    /// Character references remain encoded. This does not perform browser layout,
+    /// visibility filtering or rendered-whitespace normalization.
+    /// Enable `entities` and use `decoded_inner_text` for character references.
     /// This function may not allocate memory for a new string as it can just return the part of the tag that doesn't have markup.
     /// For tags that *do* have more than one subnode, this will allocate memory
     #[cfg(feature = "std")]
@@ -602,10 +604,19 @@ impl<'a> HTMLTag<'a> {
         {
             return self.inner_text(parser);
         }
+        let children = &self._children;
+        if children.is_empty() {
+            return Cow::Borrowed("");
+        }
+        if children.len() == 1 {
+            return children[0]
+                .get(parser)
+                .map_or(Cow::Borrowed(""), |node| node.decoded_inner_text(parser));
+        }
         let mut text = String::new();
-        for handle in self.children().top().iter() {
+        for handle in children.iter() {
             if let Some(node) = handle.get(parser) {
-                text.push_str(&node.decoded_inner_text(parser));
+                node.append_decoded_text(parser, &mut text);
             }
         }
         Cow::Owned(text)
@@ -966,6 +977,48 @@ impl<'a> Node<'a> {
             Node::Comment(_) => Cow::Borrowed(""),
             Node::Raw(r) => r.as_utf8_str(),
             Node::Tag(t) => t.inner_text(parser),
+        }
+    }
+
+    #[cfg(feature = "entities")]
+    fn append_decoded_text<
+        's,
+        'p: 's,
+        const MAX_NODES: usize,
+        const MAX_STACK: usize,
+        const MAX_ROOTS: usize,
+        const MAX_IDS: usize,
+        const MAX_CLASSES: usize,
+        const MAX_SELECTOR_NODES: usize,
+    >(
+        &'s self,
+        parser: &'p Parser<
+            'a,
+            MAX_NODES,
+            MAX_STACK,
+            MAX_ROOTS,
+            MAX_IDS,
+            MAX_CLASSES,
+            MAX_SELECTOR_NODES,
+        >,
+        output: &mut String,
+    ) {
+        match self {
+            Node::Comment(_) => {}
+            Node::Raw(raw) => output.push_str(&crate::entities::decode(&raw.as_utf8_str())),
+            Node::Tag(tag) => {
+                if tag.name().as_bytes().eq_ignore_ascii_case(b"script")
+                    || tag.name().as_bytes().eq_ignore_ascii_case(b"style")
+                {
+                    output.push_str(&tag.inner_text(parser));
+                } else {
+                    for child in tag.children().top().iter() {
+                        if let Some(child) = child.get(parser) {
+                            child.append_decoded_text(parser, output);
+                        }
+                    }
+                }
+            }
         }
     }
 

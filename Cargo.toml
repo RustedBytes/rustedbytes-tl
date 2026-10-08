@@ -53,3 +53,12 @@ codegen-units = 1
 incremental = false
 debug = false
 overflow-checks = false
+
+[[bench]]
+name = "audit"
+harness = false
+required-features = ["entities"]
+
+[[example]]
+name = "audit_allocations"
+required-features = ["entities"]
