@@ -47,9 +47,21 @@ where
     /// If `self` is inlined, this returns the underlying raw parts that make up this `InlineHashMap`.
     ///
     /// Only the first `.1` elements are initialized.
+    ///
+    /// ```compile_fail
+    /// fn mutate<K: core::hash::Hash + Eq, V, const N: usize>(values: &mut tl::inline::hashmap::InlineHashMap<K, V, N>) {
+    ///     let _ = values.inline_parts_mut(); // an unsafe call is required
+    /// }
+    /// ```
+    ///
+    /// # Safety
+    /// Before the borrow ends, the initialized prefix must contain valid, uniquely
+    /// owned values of the element type. Replacing a slot with uninitialized data,
+    /// duplicating an owner or dropping it without replacing it violates this contract.
+    /// Prefer `get_mut` or typed mutable access instead.
     #[inline]
     #[allow(clippy::type_complexity)]
-    pub fn inline_parts_mut(&mut self) -> Option<(&mut [MaybeUninit<(K, V)>; N], usize)> {
+    pub unsafe fn inline_parts_mut(&mut self) -> Option<(&mut [MaybeUninit<(K, V)>; N], usize)> {
         self.0.inline_parts_mut()
     }
 
@@ -74,6 +86,15 @@ where
     #[inline]
     pub fn insert(&mut self, key: K, value: V) -> Result<(), ParseError> {
         self.0.insert(key, value)
+    }
+
+    // HTML preserves the first ordinary attribute with a given name.
+    #[inline]
+    pub(crate) fn insert_first(&mut self, key: K, value: V) -> Result<(), ParseError> {
+        if self.contains_key(&key) {
+            return Ok(());
+        }
+        self.0.insert_new(key, value)
     }
 
     /// Removes an element from the map, and returns ownership over the value
@@ -130,20 +151,21 @@ where
             #[cfg(feature = "std")]
             Self::Heap(m) => Self::Heap(m.clone()),
             Self::Inline { len, data } => {
-                let mut new_data = super::uninit_array();
-
-                let iter = data.iter().take(*len).enumerate();
-
-                for (idx, element) in iter {
-                    let element = unsafe { &*element.as_ptr() };
-                    let (key, value) = element.clone();
-                    new_data[idx] = MaybeUninit::new((key, value));
+                let mut cloned = Self::new();
+                let (initialized, target) = match &mut cloned {
+                    Self::Inline { len, data } => (len, data),
+                    #[cfg(feature = "std")]
+                    Self::Heap(_) => unreachable!("new storage is inline"),
+                };
+                for element in data.iter().take(*len) {
+                    // SAFETY: only the initialized prefix is read. The new owner
+                    // updates its prefix after each successful clone, so a panic
+                    // drops all previously cloned elements exactly once.
+                    let value = unsafe { element.assume_init_ref() }.clone();
+                    target[*initialized].write(value);
+                    *initialized += 1;
                 }
-
-                Self::Inline {
-                    len: *len,
-                    data: new_data,
-                }
+                cloned
             }
         }
     }
@@ -287,6 +309,15 @@ impl<K: Eq + Hash, V, const N: usize> InlineHashMapInner<K, V, N> {
     }
 
     pub fn insert(&mut self, k: K, v: V) -> Result<(), ParseError> {
+        // Match std::HashMap replacement semantics before capacity checks.
+        if let Some(value) = self.get_mut(&k) {
+            *value = v;
+            return Ok(());
+        }
+        self.insert_new(k, v)
+    }
+
+    fn insert_new(&mut self, k: K, v: V) -> Result<(), ParseError> {
         let (array, len) = match self {
             Self::Inline { data, len } => (data, len),
             #[cfg(feature = "std")]
@@ -306,11 +337,14 @@ impl<K: Eq + Hash, V, const N: usize> InlineHashMapInner<K, V, N> {
             {
                 let mut map = std::collections::HashMap::with_capacity(*len);
 
-                // move old elements to heap
-                for element in array.iter_mut().take(*len) {
-                    let element = core::mem::replace(element, MaybeUninit::uninit());
-                    let (key, value) = unsafe { element.assume_init() };
-
+                // Remove from the end of the initialized prefix before invoking
+                // user Hash/Eq code. On unwind, self owns only untouched entries,
+                // and the temporary map owns entries already moved into it.
+                while *len > 0 {
+                    *len -= 1;
+                    // SAFETY: this slot belonged to the initialized prefix; its
+                    // length has now been reduced so Drop will not visit it again.
+                    let (key, value) = unsafe { array[*len].assume_init_read() };
                     map.insert(key, value);
                 }
 

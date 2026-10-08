@@ -20,9 +20,8 @@ suffix attribute values do not match. Invalid syntax returns `None`.
 
 Queries using structural selectors build an O(nodes) parent/sibling/position
 index. Simple selectors keep the existing path without this index. `:has()`
-scans candidates and builds a scoped index per anchor; this is correctness work,
-not a claim of optimized relational-selector performance. No before/after
-performance measurement has been made. Parsing is bounded to fewer than 64
+scans candidates with a borrowed scope boundary, without copying the index per
+anchor. See [Rust audit notes](rust-audit.md) for measured timing and allocations. Parsing is bounded to fewer than 64
 recursive levels and fewer than 64 simple selectors per compound; larger inputs
 return `None` instead of risking recursive stack exhaustion.
 
@@ -85,4 +84,5 @@ The final clippy allowance is for the pre-existing byte-character array in
 combinators, mixed/list precedence, sibling numbering across text/comments,
 negative and positive nth-child formulae, has scoping, malformed/overlarge
 queries, quoted attributes, owner movement across a thread, and decoded-text
-edge cases. Miri was not run: the installed pinned nightly has no Miri component.
+edge cases. The initial investigation did not run Miri. The subsequent
+[Rust audit](rust-audit.md) covers panic cleanup, containers and owned DOMs under Miri.

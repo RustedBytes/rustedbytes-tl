@@ -13,7 +13,7 @@ use std::borrow::Cow;
 use crate::errors::SetBytesError;
 
 /// A storage type for raw bytes, used by the parser
-#[derive(Eq, PartialOrd, Ord)]
+#[derive(Eq)]
 pub struct Bytes<'a> {
     /// The inner data
     data: BytesInner,
@@ -58,6 +58,18 @@ impl<'a> PartialEq for Bytes<'a> {
         let this = self.as_bytes();
         let that = other.as_bytes();
         this == that
+    }
+}
+
+impl PartialOrd for Bytes<'_> {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Bytes<'_> {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+        self.as_bytes().cmp(other.as_bytes())
     }
 }
 
