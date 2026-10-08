@@ -65,8 +65,6 @@ extraction do not sanitize untrusted content.
 
 - [Usage guide](https://github.com/RustedBytes/rustedbytes-tl/blob/master/docs/usage.md): executable examples and API behavior.
 - [Development guide](https://github.com/RustedBytes/rustedbytes-tl/blob/master/docs/development.md): feature checks, docs, benchmarks and troubleshooting.
-- [Migration and silkworm compatibility](https://github.com/RustedBytes/rustedbytes-tl/blob/master/docs/silkworm-compatibility.md): supported selectors and remaining compatibility work.
-- [Rust audit](https://github.com/RustedBytes/rustedbytes-tl/blob/master/docs/rust-audit.md): safety fixes and measured performance, with methodology and limits.
 
 ## Provenance and license
 
