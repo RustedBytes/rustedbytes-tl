@@ -66,9 +66,9 @@ cargo run --release --features entities --example audit_allocations
 
 `--test` is a smoke check, not a timing measurement. `tl` benchmarks parsing;
 `audit` benchmarks queries and text on a prebuilt DOM. The allocation example
-measures requested allocation activity separately. See the
-[audit report](rust-audit.md) for fixtures, baselines, confidence intervals and
-limits. Reproduce baseline and candidate with identical toolchains, dependency
+measures requested allocation activity separately. Inspect `benches/tl.rs`, `benches/audit.rs` and
+`examples/audit_allocations.rs` for the actual fixtures and counters. No baseline
+report is included in this checkout. Reproduce baseline and candidate with identical toolchains, dependency
 resolution, features and flags; avoid concurrent builds during timing runs.
 
 ## Troubleshooting
@@ -79,7 +79,7 @@ resolution, features and flags; avoid concurrent builds during timing runs.
 | `parse` requires const arguments | Enable `std`, or provide all six bounded capacities |
 | `decoded_inner_text` is missing | Enable `entities`, which also enables `std` |
 | Query is rejected | Check the supported CSS subset; rejection differs from an empty iterator |
-| Tree differs from a browser | Review HTML5 recovery limits in the compatibility notes |
+| Tree differs from a browser | Review HTML5 recovery limits in the [compatibility reference](compatibility.md) |
 | Capacity error | Increase the relevant bounded budget or use heap-backed `std` parsing |
 
 Docs-only paths trigger CI too. `ci.yml` checks code and docs. Version changes and publishing use the separate
@@ -91,8 +91,8 @@ workflows described below.
 1. Run **Update version** (`update-version.yml`) from `master`. Choose `patch`,
    `minor` or `major`, or enter an explicit `MAJOR.MINOR.PATCH`. The workflow
    rejects malformed, unchanged or decreased versions and existing version
-   branches/tags. For the breaking changes since 0.2.0, choose `minor` (0.3.0)
-   or a later compatible release version, rather than a 0.2.x patch.
+   branches/tags. Choose the increment from the changes since the manifest version;
+   the current manifest is already `0.3.0`.
 2. Review the generated `chore/version-*` PR and its explicitly dispatched
    `ci.yml` run, then merge it. Only `Cargo.toml` is committed: this library
    does not track `Cargo.lock`. Enable **Allow GitHub Actions to create and

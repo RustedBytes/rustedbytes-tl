@@ -65,12 +65,37 @@ descendant, child and sibling combinators, `:first-child`, `:nth-child(an+b)`,
 text and comments. Type names match ASCII-insensitively. CSS escapes,
 namespaces, attribute case flags, other pseudo-classes and `:has(> a)` are
 unsupported. Recursive nesting and compound size are bounded; see the
-[compatibility notes](https://github.com/RustedBytes/rustedbytes-tl/blob/master/docs/silkworm-compatibility.md).
+[compatibility notes](https://github.com/RustedBytes/rustedbytes-tl/blob/master/docs/compatibility.md).
 
 Structural queries build indexes proportional to DOM node count. `:has` can
 scan many candidates; it is not guaranteed to take linear time. Calling
 `Selector::matches` directly lacks the structural context supplied by the DOM
 query iterator.
+
+## Walking the tree and writing markup
+
+`dom.nodes()` includes every parsed node in source order, including text and
+comments. `dom.children()` returns root handles; `tag.children().top()` returns
+only the tag's direct child handles. Resolve each handle with `dom.parser()`.
+
+```rust
+# #[cfg(feature = "std")] {
+let dom = tl::parse("<section><p>Hello</p><!--note--></section>", Default::default()).unwrap();
+let root = dom.children()[0].get(dom.parser()).unwrap().as_tag().unwrap();
+assert_eq!(root.children().top().len(), 2);
+assert_eq!(dom.nodes().len(), 4);
+let mut markup = String::new();
+dom.write_outer_html(&mut markup).unwrap();
+assert_eq!(markup, "<section><p>Hello</p><!--note--></section>");
+# }
+```
+
+`write_outer_html` accepts a `core::fmt::Write` sink in either build. A `String`
+sink allocates; use a bounded or streaming sink when that matters. Sink failures
+return `core::fmt::Error` and can leave partial output. Serialization reconstructs
+markup, so attribute quotes, ordering and other formatting can differ from the
+input. It does not escape replacement attribute values or sanitize markup;
+keep the original input if exact source preservation is required.
 
 ## Raw and decoded text
 
@@ -132,4 +157,5 @@ APIs and makes `InlineVec::inline_parts_mut` and
 raw mutable storage need review. Prefer safe collection methods such as
 `get_mut`, `as_mut_slice` (vector) and `insert` (map). Do not add an unsafe block
 without meeting the documented initialized-prefix and ownership invariants.
-The crate version has not yet been bumped; review the Git revision you consume.
+The manifest now declares `0.3.0`. Review the revision and features you consume;
+`std` and bounded builds expose different parsing and query signatures.
