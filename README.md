@@ -1,51 +1,73 @@
-# `rustedbytes-tl`
+# rustedbytes-tl
 
-[![Crates.io Version](https://img.shields.io/crates/v/rustedbytes-tl)](https://crates.io/crates/rustedbytes-tl)
+[![Crates.io](https://img.shields.io/crates/v/rustedbytes-tl.svg)](https://crates.io/crates/rustedbytes-tl)
 
-tl is a fast HTML parser written in pure Rust.
+A lightweight HTML parser written in Rust. It borrows input bytes and offers
+allocation-free bounded parsing by default, or heap-backed DOMs and CSS queries
+with `std`. The Rust crate is imported as **`tl`**.
 
-By default this crate builds without `std` or `alloc`. Enable `std` for the
-allocating convenience API. The examples below target the current Git revision
-(next breaking 0.3.x release), including APIs not present in published 0.2.0:
+This README describes the current Git source. The manifest still says `0.2.0`,
+but this branch contains breaking changes intended for the next `0.3.x` release.
+The published [0.2.0 API reference](https://docs.rs/rustedbytes-tl/0.2.0/tl/)
+does not describe all APIs below. Generate current API docs with
+`cargo doc --features entities --open`.
+
+## Getting started
+
+Use the current source with heap-backed parsing:
 
 ```toml
+[dependencies]
 rustedbytes-tl = { git = "https://github.com/RustedBytes/rustedbytes-tl", features = ["std"] }
 ```
 
-For the nightly portable SIMD path, enable `portable-simd` and build with
-nightly:
-
-```sh
-cargo +nightly build --features portable-simd
-```
-
-## Queries and decoded text
-
-Enable `std` for structural CSS queries and safe owned DOMs:
+Commit your application's Cargo.lock to retain the resolved Git revision.
 
 ```rust
 # #[cfg(feature = "std")] {
-let guard = tl::VDomGuard::parse(
-    "<ul><li><a href='/item'>Item</a></li></ul>".into(),
-    tl::ParserOptions::default(),
-).unwrap();
-assert_eq!(guard.get_ref().query_selector("ul > li a[href]").unwrap().count(), 1);
+let html = "<ul><li><a href='/item'>Item</a></li></ul>";
+let dom = tl::parse(html, tl::ParserOptions::default()).unwrap();
+let handle = dom.query_selector("ul > li a[href]").unwrap().next().unwrap();
+let node = handle.get(dom.parser()).unwrap();
+assert_eq!(node.inner_text(dom.parser()), "Item");
+let tag = node.as_tag().unwrap();
+let href = tag.attributes().get("href").unwrap().unwrap();
+assert_eq!(href.as_bytes(), b"/item");
 # }
 ```
 
-Enable `entities` to use `decoded_inner_text` for HTML character references.
-`inner_text` continues to return the original undecoded text.
-See [compatibility notes](docs/silkworm-compatibility.md) for supported selectors,
-remaining HTML5 differences, query limits and release compatibility.
+Keep `html` alive for every use of the borrowed DOM. If the DOM must own its
+input, use the safe `tl::VDomGuard::parse(String, ParserOptions)` constructor.
+See the [usage guide](https://github.com/RustedBytes/rustedbytes-tl/blob/master/docs/usage.md) for owned input, attributes, decoded text,
+query errors and bounded parsing.
 
-For checks, benchmarks, safety changes and migration guidance, see the
-[Rust audit notes](docs/rust-audit.md).
+## Features
 
-## Provenance
+| Feature | Behavior |
+| --- | --- |
+| Default (none) | `no_std`, no allocation; explicit capacities in `parse`; bounded simple selectors |
+| `std` | Heap-backed storage, owned DOMs, text extraction, structural CSS selectors |
+| `entities` | Implies `std`; adds character-reference decoding through `decoded_inner_text` |
+| `portable-simd` | Requires nightly Rust; optional SIMD parsing path, combinable with the above |
 
-This crate is a fork of [`astral-tl`](https://github.com/astral-sh/astral-tl), modified to
-add no-std, zero-copy parsing and other improvements.
+`__INTERNALS_DO_NOT_USE` exposes instrumentation internals and is not a supported
+application feature. Stable builds should select features explicitly rather
+than use `--all-features`, which enables nightly-only `portable-simd`.
 
-## License
+## Scope and documentation
 
-MIT.
+The parser does not implement the complete HTML5 tree-building algorithm.
+Malformed HTML can produce a different tree from a browser; omitted `tbody`
+elements are not inserted. CSS support is a subset, and text extraction does
+not implement browser layout or visibility rules. HTML parsing and text
+extraction do not sanitize untrusted content.
+
+- [Usage guide](https://github.com/RustedBytes/rustedbytes-tl/blob/master/docs/usage.md): executable examples and API behavior.
+- [Development guide](https://github.com/RustedBytes/rustedbytes-tl/blob/master/docs/development.md): feature checks, docs, benchmarks and troubleshooting.
+- [Migration and silkworm compatibility](https://github.com/RustedBytes/rustedbytes-tl/blob/master/docs/silkworm-compatibility.md): supported selectors and remaining compatibility work.
+- [Rust audit](https://github.com/RustedBytes/rustedbytes-tl/blob/master/docs/rust-audit.md): safety fixes and measured performance, with methodology and limits.
+
+## Provenance and license
+
+Forked from [astral-tl](https://github.com/y21/astral-tl) and extended for bounded
+`no_std` parsing and RustedBytes consumers. Licensed under MIT; see [LICENSE](https://github.com/RustedBytes/rustedbytes-tl/blob/master/LICENSE).
