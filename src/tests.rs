@@ -1005,3 +1005,123 @@ fn double_space_before_closing_bracket() {
     assert_eq!(attrs.get("href").unwrap().unwrap().as_utf8_str(), "url");
     assert_eq!(attrs.get("rel").unwrap().unwrap().as_utf8_str(), "internal");
 }
+
+#[test]
+fn structural_selectors_and_precedence() {
+    let dom = parse("<ul><li class='item'><a href='/items/1'>one</a></li> text <!-- gap --><li class='item'><span><a href='/items/2'>two</a></span></li><li><a>three</a></li></ul><p>outside</p>", ParserOptions::default()).unwrap();
+    for (selector, count) in [
+        ("li a", 3),
+        ("li > a", 2),
+        ("ul > li > a", 2),
+        (".item a[href]", 2),
+        ("li.item > a", 1),
+        ("li + li", 2),
+        ("li ~ li", 2),
+        ("li:first-child", 1),
+        ("li:nth-child(2)", 1),
+        ("li:nth-child(odd)", 2),
+        ("li:nth-child(2n + 1)", 2),
+        ("li:nth-child(-n+2)", 2),
+        ("li:not(.item)", 1),
+        ("li:has(span a)", 1),
+        ("li:has(ul a)", 0),
+        ("li:has(li a)", 0),
+        ("ul:has(li a)", 1),
+        ("li > a, p", 3),
+        ("p, li > a", 3),
+        ("*", 9),
+        ("li\t>\na", 2),
+        ("UL > LI", 3),
+    ] {
+        assert_eq!(
+            dom.query_selector(selector).unwrap().count(),
+            count,
+            "{selector}"
+        );
+    }
+    for selector in [
+        "li >",
+        "> a",
+        "li,,a",
+        "li + ~ a",
+        ".",
+        "#",
+        "li:nth-child()",
+        "li:nth-child(2n2)",
+        "li:has(>a)",
+        "li:unknown",
+        "li:not(",
+    ] {
+        assert!(dom.query_selector(selector).is_none(), "{selector}");
+    }
+}
+
+#[test]
+fn safe_owned_constructor() {
+    let guard =
+        crate::VDomGuard::parse(String::from("<p>owned</p>"), ParserOptions::default()).unwrap();
+    let guard = std::thread::spawn(move || guard).join().unwrap();
+    assert_eq!(guard.get_ref().query_selector("p").unwrap().count(), 1);
+}
+
+#[cfg(feature = "entities")]
+#[test]
+fn decoded_text_preserves_source_and_raw_text() {
+    let dom = parse("<p>A &amp; B&nbsp;C &#x1F600; &#169; &NotEqualTilde; &unknown;</p><script>&amp;</script><div>&am<span>p;</span></div>", ParserOptions::default()).unwrap();
+    let parser = dom.parser();
+    let p = dom
+        .query_selector("p")
+        .unwrap()
+        .next()
+        .unwrap()
+        .get(parser)
+        .unwrap();
+    assert_eq!(
+        p.decoded_inner_text(parser),
+        "A & B\u{a0}C 😀 © ≂\u{338} &unknown;"
+    );
+    assert!(p.inner_text(parser).contains("&amp;"));
+    let script = dom
+        .query_selector("script")
+        .unwrap()
+        .next()
+        .unwrap()
+        .get(parser)
+        .unwrap();
+    assert_eq!(script.decoded_inner_text(parser), "&amp;");
+    let div = dom
+        .query_selector("div")
+        .unwrap()
+        .next()
+        .unwrap()
+        .get(parser)
+        .unwrap();
+    assert_eq!(div.decoded_inner_text(parser), "&amp;");
+}
+
+#[test]
+fn quoted_attributes_and_bounded_selectors() {
+    let dom = parse(
+        "<a title='hello world' href='/items/x?y=1' empty=''></a>",
+        ParserOptions::default(),
+    )
+    .unwrap();
+    for (query, count) in [
+        ("a[title='hello world']", 1),
+        ("a[href='/items/x?y=1']", 1),
+        ("a[empty='']", 1),
+        ("a[empty^='']", 0),
+        ("a[empty*='']", 0),
+        ("a:not(.missing)", 1),
+    ] {
+        assert_eq!(dom.query_selector(query).unwrap().count(), count, "{query}");
+    }
+    assert!(
+        dom.query_selector("a > a > a > a >".repeat(100).as_str())
+            .is_none()
+    );
+    assert!(
+        dom.query_selector(&format!("a{}", ".x".repeat(1000)))
+            .is_none()
+    );
+}

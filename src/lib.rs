@@ -4,6 +4,8 @@
 #![cfg_attr(feature = "portable-simd", feature(portable_simd))]
 
 mod bytes;
+#[cfg(feature = "entities")]
+mod entities;
 /// Errors that occur throughout the crate
 pub mod errors;
 /// Inline data structures

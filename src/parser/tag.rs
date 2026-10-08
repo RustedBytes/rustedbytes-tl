@@ -572,6 +572,45 @@ impl<'a> HTMLTag<'a> {
         Cow::Owned(s)
     }
 
+    /// Returns text with HTML character references decoded (the `entities` feature).
+    /// Unlike `inner_text`, named and numeric references in ordinary text are decoded.
+    /// Script/style raw text and the original DOM bytes remain unchanged.
+    #[cfg(feature = "entities")]
+    pub fn decoded_inner_text<
+        's,
+        'p: 's,
+        const MAX_NODES: usize,
+        const MAX_STACK: usize,
+        const MAX_ROOTS: usize,
+        const MAX_IDS: usize,
+        const MAX_CLASSES: usize,
+        const MAX_SELECTOR_NODES: usize,
+    >(
+        &'s self,
+        parser: &'p Parser<
+            'a,
+            MAX_NODES,
+            MAX_STACK,
+            MAX_ROOTS,
+            MAX_IDS,
+            MAX_CLASSES,
+            MAX_SELECTOR_NODES,
+        >,
+    ) -> Cow<'s, str> {
+        if self.name().as_bytes().eq_ignore_ascii_case(b"script")
+            || self.name().as_bytes().eq_ignore_ascii_case(b"style")
+        {
+            return self.inner_text(parser);
+        }
+        let mut text = String::new();
+        for handle in self.children().top().iter() {
+            if let Some(node) = handle.get(parser) {
+                text.push_str(&node.decoded_inner_text(parser));
+            }
+        }
+        Cow::Owned(text)
+    }
+
     /// Tries to parse the query selector and returns an iterator over elements that match the given query selector.
     ///
     /// # Example
@@ -927,6 +966,42 @@ impl<'a> Node<'a> {
             Node::Comment(_) => Cow::Borrowed(""),
             Node::Raw(r) => r.as_utf8_str(),
             Node::Tag(t) => t.inner_text(parser),
+        }
+    }
+
+    /// Returns text with HTML character references decoded (the `entities` feature).
+    /// Unlike `inner_text`, named and numeric references in ordinary text are decoded.
+    /// Raw nodes use text-context decoding. Query a script/style tag to preserve its raw text.
+    /// The original DOM bytes remain unchanged.
+    #[cfg(feature = "entities")]
+    pub fn decoded_inner_text<
+        's,
+        'p: 's,
+        const MAX_NODES: usize,
+        const MAX_STACK: usize,
+        const MAX_ROOTS: usize,
+        const MAX_IDS: usize,
+        const MAX_CLASSES: usize,
+        const MAX_SELECTOR_NODES: usize,
+    >(
+        &'s self,
+        parser: &'p Parser<
+            'a,
+            MAX_NODES,
+            MAX_STACK,
+            MAX_ROOTS,
+            MAX_IDS,
+            MAX_CLASSES,
+            MAX_SELECTOR_NODES,
+        >,
+    ) -> Cow<'s, str> {
+        match self {
+            Node::Comment(_) => Cow::Borrowed(""),
+            Node::Tag(tag) => tag.decoded_inner_text(parser),
+            Node::Raw(raw) => match raw.as_utf8_str() {
+                Cow::Borrowed(text) => crate::entities::decode(text),
+                Cow::Owned(text) => Cow::Owned(crate::entities::decode(&text).into_owned()),
+            },
         }
     }
 

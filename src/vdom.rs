@@ -313,12 +313,26 @@ unsafe impl Sync for VDomGuard {}
 
 #[cfg(feature = "std")]
 impl VDomGuard {
-    /// Parses the input string
-    pub(crate) fn parse(input: String, options: ParserOptions) -> Result<VDomGuard, ParseError> {
+    /// Parses an owned input, keeping its backing storage alive until the guard is dropped.
+    /// All DOM borrows are bound to the guard, including cloned nodes.
+    ///
+    /// ```compile_fail
+    /// let node = {
+    ///     let guard = tl::VDomGuard::parse("<p>hello</p>".into(), tl::ParserOptions::default()).unwrap();
+    ///     guard.get_ref().nodes()[0].clone()
+    /// };
+    /// println!("{node:?}");
+    /// ```
+    pub fn parse(input: String, options: ParserOptions) -> Result<VDomGuard, ParseError> {
         let input = RawString::new(input);
 
         let ptr = input.as_ptr();
 
+        // SAFETY: RawString owns a boxed str whose allocation remains stable when
+        // the guard moves. On errors it is dropped after the temporary parser.
+        // On success dom is declared before _s and is dropped first. get_ref and
+        // get_mut_ref shorten the covariant input lifetime to a guard borrow;
+        // neither exposes a mutable VDom or a static reference to safe callers.
         let input_ref: &'static str = unsafe { &*ptr };
 
         // Parsing will either:
