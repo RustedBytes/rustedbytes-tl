@@ -1,4 +1,5 @@
 #![doc = include_str!("../README.md")]
+#![doc = include_str!("../docs/usage.md")]
 #![deny(missing_docs)]
 #![cfg_attr(not(feature = "std"), no_std)]
 #![cfg_attr(feature = "portable-simd", feature(portable_simd))]
@@ -44,8 +45,8 @@ const STD_INLINE_CLASSES: usize = 16;
 ///
 /// This is the "entry point" and function that is called to parse HTML.
 /// The input string must be kept alive, and must outlive `VDom`.
-/// If you need an "owned" version that takes an input string and can be kept around forever,
-/// consider using `parse_owned()`.
+/// For an owned input string, use [`VDomGuard::parse`]. References obtained from
+/// that guard remain bounded by its lifetime.
 ///
 /// # Errors
 /// Throughout the parser it is assumed that spans never overflow a `u32`.
@@ -136,7 +137,9 @@ pub fn parse_query_selector<const MAX_SELECTOR_NODES: usize>(
 /// This uses `unsafe` code to create a self-referential-like struct.
 /// The given input string is first leaked and turned into raw pointer, and its lifetime will be promoted to 'static.
 /// Once `VDomGuard` goes out of scope, the string will be freed.
-/// It should not be possible to cause UB in its current form and might become a safe function in the future.
+/// This legacy signature is retained for compatibility. New code should use
+/// the safe [`VDomGuard::parse`] constructor, which enforces the same ownership
+/// and lifetime invariants.
 #[cfg(feature = "std")]
 pub unsafe fn parse_owned(input: String, options: ParserOptions) -> Result<VDomGuard, ParseError> {
     VDomGuard::parse(input, options)
