@@ -1,6 +1,6 @@
 [package]
 name = "rustedbytes-tl"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["y21", "Yehor Smoliakov"]
 edition = "2024"
 license = "MIT"
