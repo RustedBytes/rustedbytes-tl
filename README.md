@@ -6,8 +6,9 @@ A lightweight HTML parser written in Rust. It borrows input bytes and offers
 allocation-free bounded parsing by default, or heap-backed DOMs and CSS queries
 with `std`. The Rust crate is imported as **`tl`**.
 
-This README describes the current Git source. The manifest still says `0.2.0`,
-but this branch contains breaking changes intended for the next `0.3.x` release.
+This README describes the current Git source. The source contains breaking changes since the published `0.2.0` API;
+the first release containing them must be `0.3.x` or later.
+See `Cargo.toml` for the version selected for the next release.
 The published [0.2.0 API reference](https://docs.rs/rustedbytes-tl/0.2.0/tl/)
 does not describe all APIs below. Generate current API docs with
 `cargo doc --features entities --open`.
